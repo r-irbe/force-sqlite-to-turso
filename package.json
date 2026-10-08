@@ -1,0 +1,24 @@
+{
+  "name": "@r-irbe/force-sqlite-to-turso",
+  "version": "0.1.0",
+  "description": "Agent-agnostic tooling to rewire any coding agent's better-sqlite3 usage: NODE_OPTIONS preload shim with telemetry mode now, local sqld single-writer and libSQL/Turso driver swap next. Works without modifying agent sources; a bad config degrades to inert, never crashes an agent.",
+  "main": "register.cjs",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node selftest.mjs"
+  },
+  "keywords": [
+    "better-sqlite3",
+    "libsql",
+    "turso",
+    "sqld",
+    "sqlite",
+    "coding-agent",
+    "preload",
+    "shim",
+    "walmode",
+    "sqlite-busy"
+  ],
+  "author": "r-irbe",
+  "license": "Apache-2.0"
+}

@@ -1,0 +1,9 @@
+{
+  "mode": "telemetry",
+  "logFile": "${HOME}/.local/state/force-sqlite-to-turso/telemetry.jsonl",
+  "logSqlText": false,
+  "stores": [
+    { "match": "sessions.db", "redactPath": true },
+    { "match": ".pi-hermes-locks.sqlite", "redactPath": true }
+  ]
+}
