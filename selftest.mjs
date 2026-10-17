@@ -11,6 +11,8 @@ import path from 'path';
 const requireC = createRequire(import.meta.url);
 const { expandVars, loadConfigFromObject, loadConfig } = requireC('./lib/config.cjs');
 const { wrapDatabaseClass } = requireC('./lib/shim.cjs');
+const server = requireC('./lib/server.cjs');
+const route = requireC('./lib/route.cjs');
 
 let passed = 0;
 function check(name, fn) {
@@ -135,6 +137,40 @@ process.exit(0);`;
     throw new Error(`hook did not capture ops: ${ops.join(',')}`);
   }
   rmSync(dir, { recursive: true, force: true });
+});
+
+// --- phase 3 additions (sqld launcher + routing decisions) -----------------
+
+check('config: sqld mode is operational with a server block, degrades without', () => {
+  const home = '/home/h';
+  const withServer = loadConfigFromObject({ mode: 'sqld', server: { command: 'node', healthUrl: 'http://127.0.0.1:1/health' } }, { HOME: home });
+  if (withServer.mode !== 'sqld' || withServer.degraded) throw new Error('sqld+server should stay sqld');
+  if (!withServer.server || withServer.server.command !== 'node') throw new Error('server block lost');
+  const noServer = loadConfigFromObject({ mode: 'sqld' }, { HOME: home });
+  if (noServer.mode !== 'telemetry' || !noServer.degraded) throw new Error('sqld without server must degrade');
+  const lib = loadConfigFromObject({ mode: 'libsql' }, { HOME: home });
+  if (lib.mode !== 'telemetry' || !lib.degraded) throw new Error('libsql must degrade');
+});
+
+check('server: status reports unconfigured / stopped / stale pid without throwing', () => {
+  const cfg = loadConfigFromObject({ mode: 'telemetry' }, { HOME: tmpdir() });
+  const s = server.status(cfg);
+  if (s.state !== 'unconfigured') throw new Error(`expected unconfigured, got ${s.state}`);
+  const stateDir = mkdtempSync(path.join(tmpdir(), 'fstt-state-'));
+  const cfg2 = loadConfigFromObject({ mode: 'sqld', server: { command: process.execPath }, stateDir }, { HOME: tmpdir() });
+  writeFileSync(server.pidPath(cfg2), '999999999');
+  const s2 = server.status(cfg2);
+  if (s2.state !== 'stopped' || !s2.stalePidFile) throw new Error(`expected stopped+stale, got ${JSON.stringify(s2)}`);
+});
+
+check('route: matched store routes only when healthy; unmatched never routes', () => {
+  const cfg = loadConfigFromObject({ mode: 'sqld', server: { command: 'x' }, stores: [{ match: 'sessions.db' }] }, { HOME: tmpdir() });
+  const hit = route.decide(cfg, '/x/sessions.db', true);
+  if (!hit.routed || hit.decision !== 'pending-sync-bridge') throw new Error('healthy match should route');
+  const down = route.decide(cfg, '/x/sessions.db', false);
+  if (down.routed || down.decision !== 'telemetry-fallback') throw new Error('unhealthy match should fall back');
+  const miss = route.decide(cfg, '/x/other.db', true);
+  if (miss.routed || miss.reason !== 'no-store-match') throw new Error('unmatched must not route');
 });
 
 console.log(`\n${passed} checks passed`);

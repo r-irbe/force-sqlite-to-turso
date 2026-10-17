@@ -23,7 +23,7 @@ but you get there in phases that never risk an agent crash.
 | --- | --- | --- |
 | `off` | shipped (default) | Inert. No config, no hook, nothing happens. |
 | `telemetry` | shipped | Wrap `better-sqlite3`: count and time operations per store into a JSONL log. SQL text is **never** logged unless you opt in with `logSqlText`. |
-| `sqld` | next phase | Route targets through a local libsql-server (single writer on 127.0.0.1). Until implemented, degrades to telemetry and records a `mode_degraded` event. |
+| `sqld` | shipped (launcher + routing decisions; the driver swap awaits the sync bridge) | Starts/manages a local single-writer Hrana server (any sqld-compatible command; the loomdb data plane is the reference implementation here), records per-store routing decisions (`pending-sync-bridge` / `telemetry-fallback`), and never changes database behavior. Without a `server` block it degrades to telemetry. |
 | `libsql` | later | Full driver swap behind the shim's sync bridge. Until then, same degradation. |
 
 A config error or unsupported mode can never crash an agent: the shim
@@ -43,13 +43,47 @@ cp config.json.example ~/.config/force-sqlite-to-turso/config.json
 export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $PWD/register.cjs"
 ```
 
+## Phase 3: sqld mode (launcher + chaos harness)
+
+Configure a server block (run the server in the FOREGROUND - the launcher
+daemonizes it and owns the lifecycle; a self-daemonizing command is
+detected and reported, because its pid would escape the launcher):
+
+```json
+"server": {
+  "command": "node",
+  "args": ["/path/to/loomdb-plane.cjs", "start", "--config", "/path/to/plane.json"],
+  "healthUrl": "http://127.0.0.1:8081/health",
+  "url": "http://127.0.0.1:8081"
+}
+```
+
+```sh
+node bin/force-sqlite.cjs status   # mode, stores, server state, recent events
+node bin/force-sqlite.cjs doctor   # config + command + reachability
+node bin/force-sqlite.cjs start    # spawn detached, health-gated
+node bin/force-sqlite.cjs stop     # SIGTERM -> SIGKILL
+```
+
+The **chaos harness** proves the single-writer durability claim:
+N agent-like clients (`@libsql/client`) write through a real Hrana server,
+the server is SIGKILLed mid-run, restarted through the launcher, and every
+ACKed commit must survive exactly once.
+
+```sh
+npm run test:chaos
+```
+
+Measured 2026-10-17: 6 writers x 40 inserts, 240/240 acked, 0 failed,
+SIGKILL + restart, rows=240, missing_acked=0, integrity ok.
+
 ## Verify
 
 ```sh
 npm test
 ```
 
-Six checks: config expansion, mode degradation, inert-by-default, telemetry
+Nine checks: config expansion, mode degradation, inert-by-default, telemetry
 counting with path redaction and SQL-text hiding, identity under `off`, and
 a real smoke test -- a child node process with the preload active, loading
 the actual vendored `better-sqlite3` and running statements against an
@@ -69,8 +103,8 @@ repository ships `config.json.example` with placeholders.
 
 ## Roadmap
 
-- `sqld` mode: launcher + per-store routing + a chaos harness (N agent-like
-  clients, kill -9 the server mid-transaction, zero lost committed writes).
+- `sqld` mode: launcher + per-store routing + chaos harness - SHIPPED
+  2026-10-17 (see above). Remaining: the sync bridge.
 - Sync bridge: better-sqlite3's synchronous API over async libsql clients
   via a worker + Atomics.wait, so agents keep their exact call sites.
 - Compatibility matrix per agent (pi verified; claude code/codex next as

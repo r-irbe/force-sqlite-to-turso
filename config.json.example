@@ -3,7 +3,27 @@
   "logFile": "${HOME}/.local/state/force-sqlite-to-turso/telemetry.jsonl",
   "logSqlText": false,
   "stores": [
-    { "match": "sessions.db", "redactPath": true },
-    { "match": ".pi-hermes-locks.sqlite", "redactPath": true }
-  ]
+    {
+      "match": "sessions.db",
+      "redactPath": true
+    },
+    {
+      "match": ".pi-hermes-locks.sqlite",
+      "redactPath": true
+    }
+  ],
+  "server": {
+    "command": "node",
+    "args": [
+      "${HOME}/code/loomdb/packages/data-plane/bin/loomdb-plane.cjs",
+      "start",
+      "--config",
+      "${HOME}/.config/agent-data-fabric/plane.json"
+    ],
+    "healthUrl": "http://127.0.0.1:8081/health",
+    "url": "http://127.0.0.1:8081",
+    "startTimeoutMs": 15000,
+    "$comment": "Run the server in the FOREGROUND: the launcher daemonizes it and owns the lifecycle. Any Hrana v2 JSON server works (a sqld binary, or the loomdb data plane). Health must answer 200 with an ok payload."
+  },
+  "$comment": "Copy to ~/.config/force-sqlite-to-turso/config.json. Machine paths live here (gitignored). mode=sqld needs the server block; without it the shim degrades to telemetry, never crashing an agent."
 }
