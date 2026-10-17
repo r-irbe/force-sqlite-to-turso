@@ -24,7 +24,7 @@ but you get there in phases that never risk an agent crash.
 | `off` | shipped (default) | Inert. No config, no hook, nothing happens. |
 | `telemetry` | shipped | Wrap `better-sqlite3`: count and time operations per store into a JSONL log. SQL text is **never** logged unless you opt in with `logSqlText`. |
 | `sqld` | shipped (launcher + routing decisions; the driver swap is available for stores that opt in with `"route": "sqld"`) | Starts/manages a local single-writer Hrana server (any sqld-compatible command; the loomdb data plane is the reference implementation here), records per-store routing decisions (`pending-sync-bridge` / `telemetry-fallback`), and never changes database behavior. Without a `server` block it degrades to telemetry. |
-| `libsql` | later | Full driver swap behind the shim's sync bridge. Until then, same degradation. |
+| `libsql` | shipped for http(s) Hrana endpoints with `server.authToken`; `libsql://` (WebSocket) degrades with a reason | The same sync bridge against a remote endpoint (Turso-compatible `https://.../v2/pipeline`, Bearer auth). The WebSocket transport is not implemented, so `libsql://`/`wss://` URLs degrade to telemetry rather than attempt it. |
 
 A config error or unsupported mode can never crash an agent: the shim
 degrades and logs. The hook itself is wrapped in try/catch and always
@@ -110,6 +110,24 @@ Proof: `npm run test:bridge` runs the whole surface end to end against a
 real Hrana server (the loomdb data plane) - 21 assertions, values exact,
 including BLOB round-trips, named args, transactions and rollback.
 
+## Agent compatibility matrix
+
+`npm run test:compat` probes each installed agent with the preload active
+(`--version`, hard timeout) and reports whether it launches cleanly and
+whether any database activity was observed. Measured 2026-10-17:
+
+| agent | found | exit | version | preload | DB ops during probe |
+| --- | --- | --- | --- | --- | --- |
+| pi | yes | 0 | 1.3.0 | clean | none |
+| claude | yes | 0 | 2.0.28 (Claude Code) | clean | none |
+| codex | no | - | - | - | - |
+| cursor-agent | no | - | - | - | - |
+| gemini | no | - | - | - | - |
+
+Scope note: `--version` probes prove launch compatibility and clean
+`NODE_OPTIONS` injection; they do not exercise the agent's own DB paths. For
+that, run a real session with `mode: "telemetry"` and read the log.
+
 ## Verify
 
 ```sh
@@ -129,7 +147,8 @@ in-memory database through the hook.
 | `mode` | `off` | One of `off`, `telemetry`, `sqld`, `libsql`. |
 | `logFile` | tmpdir fallback | JSONL telemetry destination; `${VAR}` expanded. |
 | `logSqlText` | `false` | Never log SQL statements unless you ask. |
-| `stores` | `[]` | Per-store routing/privacy: `{ match, redactPath }`; `match` is a path suffix. |
+| `stores` | `[]` | Per-store routing/privacy: `{ match, route, redactPath }`; `match` is a path suffix; `route` is `sqlite` (default), `sqld`, or `libsql`. |
+| `server.authToken` | none | Bearer token for remote/libsql endpoints; its absence makes `libsql` mode degrade (never an unauthenticated attempt). |
 
 Machine-specific paths live only in the local (gitignored) config; the
 repository ships `config.json.example` with placeholders.
@@ -140,6 +159,9 @@ repository ships `config.json.example` with placeholders.
   2026-10-17.
 - Sync bridge (the driver swap): SHIPPED 2026-10-18 - better-sqlite3's
   synchronous API over async Hrana via worker + Atomics (see above).
+- `libsql` mode (remote https endpoint + Bearer auth): SHIPPED 2026-10-18.
+- Agent compatibility matrix: SHIPPED 2026-10-18 (`tools/compat-matrix.mjs`;
+  pi and claude measured clean).
 - Sync bridge: better-sqlite3's synchronous API over async libsql clients
   via a worker + Atomics.wait, so agents keep their exact call sites.
 - Compatibility matrix per agent (pi verified; claude code/codex next as

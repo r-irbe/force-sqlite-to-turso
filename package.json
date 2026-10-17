@@ -1,13 +1,14 @@
 {
   "name": "@r-irbe/force-sqlite-to-turso",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Agent-agnostic tooling to rewire any coding agent's better-sqlite3 usage: NODE_OPTIONS preload shim with telemetry mode, local single-writer server lifecycle + routing decisions + a SIGKILL chaos harness; the libSQL driver swap (sync bridge) is next.",
   "main": "register.cjs",
   "type": "commonjs",
   "scripts": {
-    "test": "node selftest.mjs",
+    "test": "node selftest.mjs && node test/auth-token.mjs",
     "test:chaos": "node test/chaos.mjs",
-    "test:bridge": "node test/bridge-live.mjs"
+    "test:bridge": "node test/bridge-live.mjs",
+    "test:compat": "node tools/compat-matrix.mjs"
   },
   "keywords": [
     "better-sqlite3",
