@@ -13,6 +13,8 @@ const { expandVars, loadConfigFromObject, loadConfig } = requireC('./lib/config.
 const { wrapDatabaseClass } = requireC('./lib/shim.cjs');
 const server = requireC('./lib/server.cjs');
 const route = requireC('./lib/route.cjs');
+const { BridgeDatabase, toArg, toNative, positionalizeNamed } = requireC('./lib/bridge.cjs');
+const { splitStatements } = requireC('./lib/hrana_client.cjs');
 
 let passed = 0;
 function check(name, fn) {
@@ -171,6 +173,40 @@ check('route: matched store routes only when healthy; unmatched never routes', (
   if (down.routed || down.decision !== 'telemetry-fallback') throw new Error('unhealthy match should fall back');
   const miss = route.decide(cfg, '/x/other.db', true);
   if (miss.routed || miss.reason !== 'no-store-match') throw new Error('unmatched must not route');
+});
+
+check('bridge codec: typed values encode/decode and named args positionalize', () => {
+  const q = positionalizeNamed('SELECT * FROM t WHERE a = :a AND b = @b AND c = $c', { a: 1, b: 'x', c: 2.5 });
+  if (q.sql !== 'SELECT * FROM t WHERE a = ? AND b = ? AND c = ?') throw new Error(`rewrite: ${q.sql}`);
+  if (JSON.stringify(q.args) !== JSON.stringify([{ type: 'integer', value: '1' }, { type: 'text', value: 'x' }, { type: 'float', value: 2.5 }])) throw new Error(`args: ${JSON.stringify(q.args)}`);
+  const repeated = positionalizeNamed('SELECT :a, :a', { a: 'v' });
+  if (repeated.args.length !== 2) throw new Error('repeat name must repeat its value');
+  let missing = null;
+  try { positionalizeNamed('SELECT :nope', {}); } catch (e) { missing = e; }
+  if (!missing || missing.code !== 'BRIDGE_MISSING_NAMED') throw new Error('missing named must throw');
+  const quoted = positionalizeNamed("SELECT ':x' AS lit, :y", { y: 2 });
+  if (quoted.sql !== "SELECT ':x' AS lit, ?") throw new Error(`quote-aware rewrite: ${quoted.sql}`);
+  if (toNative({ type: 'integer', value: '5' }) !== 5) throw new Error('integer decode');
+  if (!Buffer.isBuffer(toNative({ type: 'blob', base64: 'aGk=' }))) throw new Error('blob decode');
+  if (toArg(true).value !== '1') throw new Error('boolean encodes as integer');
+});
+
+check('bridge codec: statement splitting is quote/comment aware', () => {
+  const parts = splitStatements("INSERT INTO t VALUES ('a;b'); -- x;y\nCREATE TABLE u (v TEXT); /* ; */ SELECT 1");
+  if (parts.length !== 3) throw new Error(`parts=${parts.length} ${JSON.stringify(parts)}`);
+  // A leading block comment stays attached to its statement (valid SQL);
+  // the splitter's job is only to not break INSIDE strings/comments.
+  if (!parts[2].includes('SELECT 1')) throw new Error(`last part: ${parts[2]}`);
+});
+
+check('bridge: unsupported methods throw with the config hint', () => {
+  const stub = { _unsupported: BridgeDatabase.prototype._unsupported };
+  for (const m of ['function', 'aggregate', 'table', 'backup', 'serialize']) {
+    let err = null;
+    try { BridgeDatabase.prototype[m].call(stub); } catch (e) { err = e; }
+    if (!err || err.code !== 'BRIDGE_UNSUPPORTED') throw new Error(`${m} did not throw`);
+    if (!/"route": "sqlite"/.test(err.message)) throw new Error(`${m} hint missing`);
+  }
 });
 
 console.log(`\n${passed} checks passed`);

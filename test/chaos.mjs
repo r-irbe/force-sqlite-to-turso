@@ -182,6 +182,12 @@ async function main() {
   const ok = missing === 0 && Number(total) === acked.length && String(JSON.stringify(integrity)).includes('ok');
   if (!ok) {
     console.error('CHAOS FAIL: committed-write loss or duplicate detected');
+    try {
+      const log = fs.readFileSync(path.join(dir, 'plane.log'), 'utf8');
+      console.error('plane log tail:');
+      console.error(log.slice(-2500));
+    } catch { /* no log */ }
+    console.error(`artifacts kept at ${dir}`);
     process.exitCode = 1;
     return;
   }
@@ -192,5 +198,9 @@ try {
   await main();
 } finally {
   try { await server.stop(cfg); } catch { /* best effort */ }
-  try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* keep for debugging */ }
+  if (!process.exitCode) {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* keep for debugging */ }
+  } else {
+    console.error(`(artifacts preserved for the post-mortem: ${dir})`);
+  }
 }

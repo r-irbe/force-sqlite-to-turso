@@ -23,7 +23,7 @@ but you get there in phases that never risk an agent crash.
 | --- | --- | --- |
 | `off` | shipped (default) | Inert. No config, no hook, nothing happens. |
 | `telemetry` | shipped | Wrap `better-sqlite3`: count and time operations per store into a JSONL log. SQL text is **never** logged unless you opt in with `logSqlText`. |
-| `sqld` | shipped (launcher + routing decisions; the driver swap awaits the sync bridge) | Starts/manages a local single-writer Hrana server (any sqld-compatible command; the loomdb data plane is the reference implementation here), records per-store routing decisions (`pending-sync-bridge` / `telemetry-fallback`), and never changes database behavior. Without a `server` block it degrades to telemetry. |
+| `sqld` | shipped (launcher + routing decisions; the driver swap is available for stores that opt in with `"route": "sqld"`) | Starts/manages a local single-writer Hrana server (any sqld-compatible command; the loomdb data plane is the reference implementation here), records per-store routing decisions (`pending-sync-bridge` / `telemetry-fallback`), and never changes database behavior. Without a `server` block it degrades to telemetry. |
 | `libsql` | later | Full driver swap behind the shim's sync bridge. Until then, same degradation. |
 
 A config error or unsupported mode can never crash an agent: the shim
@@ -77,13 +77,46 @@ npm run test:chaos
 Measured 2026-10-17: 6 writers x 40 inserts, 240/240 acked, 0 failed,
 SIGKILL + restart, rows=240, missing_acked=0, integrity ok.
 
+## Phase 3 driver swap: the sync bridge
+
+A store with `"route": "sqld"` gets a **synchronous** better-sqlite3-shaped
+`Database` whose calls execute over the async Hrana protocol in a worker
+thread (SharedArrayBuffer + `Atomics.wait`). Agent code keeps its exact call
+sites - `db.prepare(sql).run(args)` stays synchronous - while the actual
+writes land on the server's single writer.
+
+```json
+"stores": [{ "match": "sessions.db", "route": "sqld", "redactPath": true }]
+```
+
+| Surface | Supported | Notes |
+| --- | --- | --- |
+| `new Database(path)` | yes | opens against `server.url`; throws on failure |
+| `prepare().run/get/all` | yes | `{changes, lastInsertRowid}`; values value-exact |
+| positional args | yes | strings, numbers, bigints, booleans (0/1), Buffers |
+| named args (`:n`/`@n`/`$n`) | yes | rewritten to positional slots, so any server works |
+| `exec(multi-statement)` | yes | quote/comment-aware splitting |
+| `pragma(str)` | yes | returns the result rows |
+| `transaction(fn)` | yes | BEGIN/COMMIT/ROLLBACK with rollback on throw |
+| `.bind/.pluck/.raw/.iterate` | yes | `iterate` is buffered (documented trade) |
+| `function/aggregate/table/backup/serialize` | no | throws `BRIDGE_UNSUPPORTED` naming `"route": "sqlite"` |
+
+Failure contract: a construction failure (server down, worker broken,
+timeout) **falls back to the native driver for that store** and records a
+`route_fallback_to_sqlite` event - an agent never crashes at open time. A
+failure mid-session throws (there is no second database to continue on).
+
+Proof: `npm run test:bridge` runs the whole surface end to end against a
+real Hrana server (the loomdb data plane) - 21 assertions, values exact,
+including BLOB round-trips, named args, transactions and rollback.
+
 ## Verify
 
 ```sh
 npm test
 ```
 
-Nine checks: config expansion, mode degradation, inert-by-default, telemetry
+Twelve checks: config expansion, mode degradation, inert-by-default, telemetry
 counting with path redaction and SQL-text hiding, identity under `off`, and
 a real smoke test -- a child node process with the preload active, loading
 the actual vendored `better-sqlite3` and running statements against an
@@ -104,7 +137,9 @@ repository ships `config.json.example` with placeholders.
 ## Roadmap
 
 - `sqld` mode: launcher + per-store routing + chaos harness - SHIPPED
-  2026-10-17 (see above). Remaining: the sync bridge.
+  2026-10-17.
+- Sync bridge (the driver swap): SHIPPED 2026-10-18 - better-sqlite3's
+  synchronous API over async Hrana via worker + Atomics (see above).
 - Sync bridge: better-sqlite3's synchronous API over async libsql clients
   via a worker + Atomics.wait, so agents keep their exact call sites.
 - Compatibility matrix per agent (pi verified; claude code/codex next as
