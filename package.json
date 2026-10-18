@@ -1,14 +1,15 @@
 {
   "name": "@r-irbe/force-sqlite-to-turso",
-  "version": "0.4.0",
-  "description": "Agent-agnostic tooling to rewire any coding agent's better-sqlite3 usage: NODE_OPTIONS preload shim with telemetry mode, local single-writer server lifecycle + routing decisions + a SIGKILL chaos harness; the libSQL driver swap (sync bridge) is next.",
+  "version": "0.5.0",
+  "description": "Agent-agnostic tooling to rewire any coding agent's better-sqlite3 usage: NODE_OPTIONS preload shim, telemetry, local single-writer server lifecycle, a sync bridge (better-sqlite3 API over Hrana), libsql mode with Bearer auth, a SIGKILL chaos harness, and a pi extension. A bad config degrades to inert, never crashes an agent.",
   "main": "register.cjs",
   "type": "commonjs",
   "scripts": {
     "test": "node selftest.mjs && node test/auth-token.mjs",
     "test:chaos": "node test/chaos.mjs",
     "test:bridge": "node test/bridge-live.mjs",
-    "test:compat": "node tools/compat-matrix.mjs"
+    "test:compat": "node tools/compat-matrix.mjs",
+    "test:extension": "node test/extension.test.mjs"
   },
   "keywords": [
     "better-sqlite3",
@@ -23,5 +24,18 @@
     "sqlite-busy"
   ],
   "author": "r-irbe",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "pi": {
+    "extensions": [
+      "./extension.cjs"
+    ]
+  },
+  "peerDependencies": {
+    "typebox": ">=0.32.0"
+  },
+  "peerDependenciesMeta": {
+    "typebox": {
+      "optional": true
+    }
+  }
 }

@@ -110,6 +110,34 @@ Proof: `npm run test:bridge` runs the whole surface end to end against a
 real Hrana server (the loomdb data plane) - 21 assertions, values exact,
 including BLOB round-trips, named args, transactions and rollback.
 
+## pi extension
+
+The package declares its extension entry in `package.json`
+(`"pi": { "extensions": ["./extension.cjs"] }`), so pi loads it directly.
+On `session_start` it:
+
+1. loads the config (a broken config leaves it inert - never a session crash);
+2. **installs the in-process hook**: the same `Module._load` patch the
+   `NODE_OPTIONS` preload uses. An extension cannot control the agent's
+   argv, but patching module loading catches better-sqlite3 requires issued
+   long after startup - the agent's own DB traffic is wrapped without
+   restarting it under a preload;
+3. records an `extension_installed` event, shows the mode in the status
+   line, and surfaces a degraded (requested-but-inactive) mode as a warning
+   with the reason.
+
+Tools:
+
+| tool | what it answers |
+| --- | --- |
+| `sqlite_route_status` | config summary, server state, recent routing/telemetry events |
+| `sqlite_route_doctor` | config resolution, requested vs active mode, per-store routes, server command and reachability |
+
+The schema builder (`typebox`) is a lazily resolved optional peer; the core
+package and its tests do not need it. `npm run test:extension` proves the
+contract against a fake `pi`: late-require wrapping, telemetry events, both
+tools, degraded-config warning, broken-config inertness.
+
 ## Agent compatibility matrix
 
 `npm run test:compat` probes each installed agent with the preload active
@@ -162,6 +190,8 @@ repository ships `config.json.example` with placeholders.
 - `libsql` mode (remote https endpoint + Bearer auth): SHIPPED 2026-10-18.
 - Agent compatibility matrix: SHIPPED 2026-10-18 (`tools/compat-matrix.mjs`;
   pi and claude measured clean).
+- pi-extension packaging: SHIPPED 2026-10-18 (in-process `Module._load`
+  hook on session_start; status/doctor tools).
 - Sync bridge: better-sqlite3's synchronous API over async libsql clients
   via a worker + Atomics.wait, so agents keep their exact call sites.
 - Compatibility matrix per agent (pi verified; claude code/codex next as
