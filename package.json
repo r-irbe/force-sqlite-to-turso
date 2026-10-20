@@ -3,7 +3,13 @@
   "version": "0.5.0",
   "description": "Agent-agnostic tooling to rewire any coding agent's better-sqlite3 usage: NODE_OPTIONS preload shim, telemetry, local single-writer server lifecycle, a sync bridge (better-sqlite3 API over Hrana), libsql mode with Bearer auth, a SIGKILL chaos harness, and a pi extension. A bad config degrades to inert, never crashes an agent.",
   "main": "register.cjs",
+  "bin": {
+    "force-sqlite": "./bin/force-sqlite.cjs"
+  },
   "type": "commonjs",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "test": "node selftest.mjs && node test/auth-token.mjs",
     "test:chaos": "node test/chaos.mjs",

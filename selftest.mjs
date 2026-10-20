@@ -5,7 +5,7 @@
 import { createRequire } from 'module';
 import { spawnSync } from 'child_process';
 import { mkdtempSync, readFileSync, existsSync, writeFileSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
+import os, { tmpdir } from 'os';
 import path from 'path';
 
 const requireC = createRequire(import.meta.url);
@@ -115,7 +115,9 @@ check('smoke: NODE_OPTIONS hook wraps real better-sqlite3 in a child process', (
   const logFile = path.join(dir, 'smoke.log');
   const cfgPath = path.join(dir, 'config.json');
   writeFileSync(cfgPath, JSON.stringify({ mode: 'telemetry', logFile }));
-  const vendored = '/home/radu/.pi/agent/npm/node_modules/pi-hermes-memory/node_modules/better-sqlite3';
+  const vendored =
+    process.env.FORCE_SQLITE_BENCH_DB ||
+    path.join(os.homedir(), '.pi/agent/extensions/pi-lens/vendor/sqlite-ast.db');
   if (!existsSync(vendored)) {
     console.log('   (vendored better-sqlite3 not present; smoke skipped)');
     rmSync(dir, { recursive: true, force: true });
