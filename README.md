@@ -38,6 +38,8 @@ export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require $PWD/register.cjs"
 
 ## Adapt to Your Use Case (Customer Journeys)
 
+![How force-sqlite-to-turso Eliminates SQLITE_BUSY Across 15+ Parallel Agents](docs/assets/mechanics.png)
+
 You can adopt `force-sqlite-to-turso` in safe, incremental phases controlled entirely by `~/.config/force-sqlite-to-turso/config.json`:
 
 <details open>
